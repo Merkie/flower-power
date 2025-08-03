@@ -198,7 +198,7 @@ const useCanvasMovement = (props: {
         duration: 0.6,
         ease: "power2.out",
         overwrite: true,
-        onStart: () => setIsZooming(true),
+        onStart: () => { setIsZooming(true); },
         onUpdate: function () {
           const current = this.targets()[0];
           scale = current.s;
@@ -209,7 +209,7 @@ const useCanvasMovement = (props: {
           updateTransform();
           setTransformVersion((v) => v + 1);
         },
-        onComplete: () => setIsZooming(false),
+        onComplete: () => { setIsZooming(false); },
       }
     );
   };
