@@ -145,6 +145,35 @@ const useCanvasMovement = (props: {
     if (!animationId) animationId = requestAnimationFrame(animate);
   };
 
+  // --- FIX: New, non-animated zoom function for pinch gestures ---
+  const pinchZoom = (factor: number, screenX: number, screenY: number) => {
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+      animationId = null;
+    }
+    velocityX = 0;
+    velocityY = 0;
+
+    const oldScale = scale;
+    let newScale = oldScale * factor;
+    newScale = Math.max(0.25, Math.min(4, newScale));
+
+    const scaleRatio = newScale / oldScale;
+
+    const newTranslateX = screenX - (screenX - translateX) * scaleRatio;
+    const newTranslateY = screenY - (screenY - translateY) * scaleRatio;
+
+    scale = newScale;
+    translateX = newTranslateX;
+    translateY = newTranslateY;
+    targetX = translateX;
+    targetY = translateY;
+
+    updateTransform();
+    setTransformVersion((v) => v + 1);
+  };
+
+  // Animated zoom for buttons and mouse wheel
   const zoom = (factor: number, screenX: number, screenY: number) => {
     setIsDragging(false);
     if (animationId) {
@@ -240,7 +269,6 @@ const useCanvasMovement = (props: {
     updateTransform();
   };
 
-  // --- Abstracted Pan and Tap Logic ---
   const panStart = (x: number, y: number) => {
     if (isZooming()) return;
     setIsDragging(true);
@@ -306,7 +334,6 @@ const useCanvasMovement = (props: {
     }
   };
 
-  // --- MOUSE & TOUCH EVENT HANDLERS ---
   const onMouseDown = (e: MouseEvent) => {
     if (e.button !== 0) return;
     panStart(e.clientX, e.clientY);
@@ -318,7 +345,6 @@ const useCanvasMovement = (props: {
   const onWheel = (e: WheelEvent) => {
     if (isZooming()) return;
     e.preventDefault();
-    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
     zoom(zoomFactor, e.clientX, e.clientY);
   };
 
@@ -353,7 +379,8 @@ const useCanvasMovement = (props: {
       const factor = newDist / lastPinchDist;
       const midX = (touch1.clientX + touch2.clientX) / 2;
       const midY = (touch1.clientY + touch2.clientY) / 2;
-      zoom(factor, midX, midY);
+      // --- FIX: Call the non-animated zoom for instant feedback ---
+      pinchZoom(factor, midX, midY);
       lastPinchDist = newDist;
     }
   };
@@ -362,11 +389,16 @@ const useCanvasMovement = (props: {
     if (isDragging()) {
       panEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
     }
+    const wasPinching = lastPinchDist !== null;
     if (e.touches.length < 2) {
       lastPinchDist = null;
     }
     if (e.touches.length === 0) {
       setIsDragging(false);
+    }
+    // --- FIX: Start physics animation after pinch to snap back to bounds ---
+    if (wasPinching && e.touches.length < 2) {
+      startAnimation();
     }
   };
 
