@@ -14,7 +14,6 @@ import gsap from "gsap";
 const rects = [...Array(225).keys()].map((i) => {
   const col = i % 15;
   const row = Math.floor(i / 15);
-
   const yOffset = col % 2 !== 0 ? 150 : 0;
 
   return {
@@ -22,7 +21,6 @@ const rects = [...Array(225).keys()].map((i) => {
     y: row * 400 + 50 - 3000 + yOffset,
     width: 300,
     height: 300,
-    // pick random number between 1 and 5
     flower: Math.floor(Math.random() * 15) + 1,
   };
 });
@@ -36,7 +34,6 @@ const useCanvasMovement = (props: {
 }) => {
   const [isDragging, setIsDragging] = createSignal(false);
   const [isZooming, setIsZooming] = createSignal(false);
-  // --- CHANGE 1: Create a "version" signal to trigger effects when transform changes ---
   const [transformVersion, setTransformVersion] = createSignal(0);
 
   // --- State & Physics Variables ---
@@ -57,6 +54,9 @@ const useCanvasMovement = (props: {
   const snapBackStiffness = 0.05;
   const rubberBandStiffness = 0.85;
   const minVelocity = 0.01;
+
+  // --- Add state for pinch gesture ---
+  let lastPinchDist: number | null = null;
 
   // --- Bounding Box Definition ---
   const boundingBox = { width: 6000, height: 6000 };
@@ -133,7 +133,6 @@ const useCanvasMovement = (props: {
       }
     }
     updateTransform();
-    // --- CHANGE 2: Update the version signal on each animation frame ---
     setTransformVersion((v) => v + 1);
     if (isSettled) {
       animationId = null;
@@ -199,9 +198,7 @@ const useCanvasMovement = (props: {
         duration: 0.6,
         ease: "power2.out",
         overwrite: true,
-        onStart: () => {
-          setIsZooming(true);
-        },
+        onStart: () => setIsZooming(true),
         onUpdate: function () {
           const current = this.targets()[0];
           scale = current.s;
@@ -210,12 +207,9 @@ const useCanvasMovement = (props: {
           targetX = translateX;
           targetY = translateY;
           updateTransform();
-          // --- CHANGE 3: Also update the version signal during GSAP animations ---
           setTransformVersion((v) => v + 1);
         },
-        onComplete: () => {
-          setIsZooming(false);
-        },
+        onComplete: () => setIsZooming(false),
       }
     );
   };
@@ -242,11 +236,12 @@ const useCanvasMovement = (props: {
     updateTransform();
   };
 
-  const onMouseDown = (e: MouseEvent) => {
-    if (e.button !== 0 || isZooming()) return;
+  // --- Abstracted Pan and Tap Logic ---
+  const panStart = (x: number, y: number) => {
+    if (isZooming()) return;
     setIsDragging(true);
-    startX = e.clientX;
-    startY = e.clientY;
+    startX = x;
+    startY = y;
     lastTranslateX = translateX;
     lastTranslateY = translateY;
     targetX = translateX;
@@ -256,10 +251,10 @@ const useCanvasMovement = (props: {
     startAnimation();
   };
 
-  const onMouseMove = (e: MouseEvent) => {
+  const panMove = (x: number, y: number) => {
     if (!isDragging()) return;
-    const deltaX = e.clientX - startX;
-    const deltaY = e.clientY - startY;
+    const deltaX = x - startX;
+    const deltaY = y - startY;
     const rawTargetX = lastTranslateX + deltaX;
     const rawTargetY = lastTranslateY + deltaY;
     const bounds = getViewportBounds();
@@ -283,28 +278,16 @@ const useCanvasMovement = (props: {
     }
   };
 
-  const onMouseUp = (e: MouseEvent) => {
+  const panEnd = (x: number, y: number) => {
     if (isDragging()) {
       setIsDragging(false);
-
-      // Calculate the distance the canvas was dragged
       const distance = Math.sqrt(
         Math.pow(targetX - lastTranslateX, 2) +
           Math.pow(targetY - lastTranslateY, 2)
       );
-
-      // A small drag distance is considered a "click"
-      if (distance < 4) {
-        // Use the mouse's screen coordinates from the event
-        const screenX = e.clientX;
-        const screenY = e.clientY;
-
-        // Convert screen coordinates to world coordinates
-        // formula: world = (screen - translation) / scale
-        const worldX = (screenX - translateX) / scale;
-        const worldY = (screenY - translateY) / scale;
-
-        // Find which rectangle, if any, was clicked
+      if (distance < 10) {
+        const worldX = (x - translateX) / scale;
+        const worldY = (y - translateY) / scale;
         const clickedRect = rects.find(
           (rect) =>
             worldX >= rect.x &&
@@ -312,18 +295,21 @@ const useCanvasMovement = (props: {
             worldY >= rect.y &&
             worldY <= rect.y + rect.height
         );
-
         if (clickedRect) {
-          console.log("Clicked on rect:", rects.indexOf(clickedRect) + 1);
-        } else {
-          console.log("Clicked outside any rect. World Coords:", {
-            x: worldX,
-            y: worldY,
-          });
+          console.log("Tapped on rect:", rects.indexOf(clickedRect) + 1);
         }
       }
     }
   };
+
+  // --- MOUSE & TOUCH EVENT HANDLERS ---
+  const onMouseDown = (e: MouseEvent) => {
+    if (e.button !== 0) return;
+    panStart(e.clientX, e.clientY);
+  };
+
+  const onMouseMove = (e: MouseEvent) => panMove(e.clientX, e.clientY);
+  const onMouseUp = (e: MouseEvent) => panEnd(e.clientX, e.clientY);
 
   const onWheel = (e: WheelEvent) => {
     if (isZooming()) return;
@@ -332,29 +318,82 @@ const useCanvasMovement = (props: {
     zoom(zoomFactor, e.clientX, e.clientY);
   };
 
+  const onTouchStart = (e: TouchEvent) => {
+    e.preventDefault();
+    const touches = e.touches;
+    if (touches.length === 1) {
+      panStart(touches[0].clientX, touches[0].clientY);
+    } else if (touches.length === 2) {
+      setIsDragging(false);
+      const touch1 = touches[0];
+      const touch2 = touches[1];
+      lastPinchDist = Math.hypot(
+        touch1.clientX - touch2.clientX,
+        touch1.clientY - touch2.clientY
+      );
+    }
+  };
+
+  const onTouchMove = (e: TouchEvent) => {
+    e.preventDefault();
+    const touches = e.touches;
+    if (touches.length === 1 && isDragging()) {
+      panMove(touches[0].clientX, touches[0].clientY);
+    } else if (touches.length === 2 && lastPinchDist !== null) {
+      const touch1 = touches[0];
+      const touch2 = touches[1];
+      const newDist = Math.hypot(
+        touch1.clientX - touch2.clientX,
+        touch1.clientY - touch2.clientY
+      );
+      const factor = newDist / lastPinchDist;
+      const midX = (touch1.clientX + touch2.clientX) / 2;
+      const midY = (touch1.clientY + touch2.clientY) / 2;
+      zoom(factor, midX, midY);
+      lastPinchDist = newDist;
+    }
+  };
+
+  const onTouchEnd = (e: TouchEvent) => {
+    if (isDragging()) {
+      panEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+    }
+    if (e.touches.length < 2) {
+      lastPinchDist = null;
+    }
+    if (e.touches.length === 0) {
+      setIsDragging(false);
+    }
+  };
+
   onMount(() => {
     const containerEl = props.container();
     if (!containerEl) return;
 
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
+    containerEl.addEventListener("touchstart", onTouchStart, { passive: false });
+    containerEl.addEventListener("touchmove", onTouchMove, { passive: false });
+    containerEl.addEventListener("touchend", onTouchEnd);
+    containerEl.addEventListener("touchcancel", onTouchEnd);
 
     const observer = new ResizeObserver(setup);
     observer.observe(containerEl);
-
-    // Call setup once initially
     setup();
 
     onCleanup(() => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      containerEl.removeEventListener("touchstart", onTouchStart);
+      containerEl.removeEventListener("touchmove", onTouchMove);
+      containerEl.removeEventListener("touchend", onTouchEnd);
+      containerEl.removeEventListener("touchcancel", onTouchEnd);
       observer.disconnect();
       if (animationId) cancelAnimationFrame(animationId);
       gsap.killTweensOf({});
     });
   });
 
-  // --- CHANGE 4: Expose the reactive and raw transform values ---
   return {
     isDragging,
     isZooming,
@@ -362,20 +401,18 @@ const useCanvasMovement = (props: {
     zoomOut,
     onMouseDown,
     onWheel,
+    onTouchStart,
+    onTouchMove,
+    onTouchEnd,
     boundingBox,
-    // Provide a reactive trigger for effects to listen to
     transformVersion,
-    // Provide an accessor for the raw, non-signal transform values
     transform: () => ({ x: translateX, y: translateY, s: scale }),
-    // Pass the container accessor through for convenience
     container: props.container,
   };
 };
 
-// --- CHANGE 5: Define a type for the movement object for cleaner props ---
 type CanvasMovement = ReturnType<typeof useCanvasMovement>;
 
-// --- CHANGE 6: Create the new FadingWorldObject component ---
 const FadingWorldObject: ParentComponent<{
   x: number;
   y: number;
@@ -386,38 +423,27 @@ const FadingWorldObject: ParentComponent<{
   const [scale, setScale] = createSignal(0);
 
   createEffect(() => {
-    // Depend on the transformVersion signal to re-run this check
     props.movement.transformVersion();
-
     const containerEl = props.movement.container();
     if (!containerEl) return;
-
-    // Get the current transform state
     const { x: tx, y: ty, s } = props.movement.transform();
-
-    // Define the object's bounding box in world coordinates
     const objectBox = {
       x: props.x,
       y: props.y,
       width: props.width,
       height: props.height,
     };
-
-    // Define the viewport's bounding box, converted to world coordinates
     const viewBox = {
       x: -tx / s,
       y: -ty / s,
       width: containerEl.clientWidth / s,
       height: containerEl.clientHeight / s,
     };
-
-    // Check for intersection (AABB collision detection)
     const intersects =
       objectBox.x < viewBox.x + viewBox.width &&
       objectBox.x + objectBox.width > viewBox.x &&
       objectBox.y < viewBox.y + viewBox.height &&
       objectBox.y + objectBox.height > viewBox.y;
-
     setScale(intersects ? 1 : 0);
   });
 
@@ -441,7 +467,6 @@ const FadingWorldObject: ParentComponent<{
 };
 
 const Canvas: Component<{
-  // --- CHANGE 7: Update the 'world' prop to receive the movement object ---
   world: Component<{ movement: CanvasMovement }>;
   hud: Component<{ movement: CanvasMovement }>;
   background: Component;
@@ -467,6 +492,9 @@ const Canvas: Component<{
         data-zooming={movement.isZooming()}
         onMouseDown={movement.onMouseDown}
         onWheel={movement.onWheel}
+        onTouchStart={movement.onTouchStart}
+        onTouchMove={movement.onTouchMove}
+        onTouchEnd={movement.onTouchEnd}
       >
         <div ref={viewRef} class="absolute origin-top-left">
           <div
@@ -478,7 +506,6 @@ const Canvas: Component<{
           >
             <Dynamic component={background} />
           </div>
-          {/* --- CHANGE 8: Pass the movement object to the world component --- */}
           <Dynamic component={world} movement={movement} />
         </div>
       </div>
@@ -487,7 +514,6 @@ const Canvas: Component<{
   );
 };
 
-// --- Example App Component ---
 function App() {
   return (
     <>
