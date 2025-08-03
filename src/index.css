@@ -1,1 +1,16 @@
 @import "tailwindcss";
+
+html,
+body {
+  width: 100vw;
+  height: 100dvh; /* Use dynamic viewport height */
+  overflow: hidden; /* Prevent scrollbars */
+  margin: 0;
+  padding: 0;
+  -webkit-text-size-adjust: 100%; /* Prevent font scaling in Safari */
+}
+
+/* This is the most important rule to prevent native browser pinch-zoom/pan */
+body {
+  touch-action: none;
+}
