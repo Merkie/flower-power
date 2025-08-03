@@ -145,7 +145,7 @@ const useCanvasMovement = (props: {
     if (!animationId) animationId = requestAnimationFrame(animate);
   };
 
-  // --- FIX: New, non-animated zoom function for pinch gestures ---
+  // Non-animated zoom function for pinch gestures
   const pinchZoom = (factor: number, screenX: number, screenY: number) => {
     if (animationId) {
       cancelAnimationFrame(animationId);
@@ -345,6 +345,8 @@ const useCanvasMovement = (props: {
   const onWheel = (e: WheelEvent) => {
     if (isZooming()) return;
     e.preventDefault();
+    // --- FIX: Added the missing zoomFactor definition ---
+    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
     zoom(zoomFactor, e.clientX, e.clientY);
   };
 
@@ -379,7 +381,6 @@ const useCanvasMovement = (props: {
       const factor = newDist / lastPinchDist;
       const midX = (touch1.clientX + touch2.clientX) / 2;
       const midY = (touch1.clientY + touch2.clientY) / 2;
-      // --- FIX: Call the non-animated zoom for instant feedback ---
       pinchZoom(factor, midX, midY);
       lastPinchDist = newDist;
     }
@@ -396,7 +397,6 @@ const useCanvasMovement = (props: {
     if (e.touches.length === 0) {
       setIsDragging(false);
     }
-    // --- FIX: Start physics animation after pinch to snap back to bounds ---
     if (wasPinching && e.touches.length < 2) {
       startAnimation();
     }
