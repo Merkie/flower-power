@@ -198,7 +198,9 @@ const useCanvasMovement = (props: {
         duration: 0.6,
         ease: "power2.out",
         overwrite: true,
-        onStart: () => { setIsZooming(true); },
+        onStart: () => {
+          setIsZooming(true);
+        },
         onUpdate: function () {
           const current = this.targets()[0];
           scale = current.s;
@@ -209,7 +211,9 @@ const useCanvasMovement = (props: {
           updateTransform();
           setTransformVersion((v) => v + 1);
         },
-        onComplete: () => { setIsZooming(false); },
+        onComplete: () => {
+          setIsZooming(false);
+        },
       }
     );
   };
@@ -449,7 +453,6 @@ const FadingWorldObject: ParentComponent<{
 
   return (
     <div
-      id={`world-object-${props.x}-${props.y}`}
       class="absolute pointer-events-none"
       style={{
         width: `${props.width}px`,
@@ -487,7 +490,7 @@ const Canvas: Component<{
       `}</style>
       <div
         ref={containerRef}
-        class="h-dvh w-full fixed top-0 left-0 cursor-grab touch-none"
+        class="h-dvh w-full fixed top-0 left-0 cursor-grab select-none"
         data-dragging={movement.isDragging()}
         data-zooming={movement.isZooming()}
         onMouseDown={movement.onMouseDown}
@@ -533,6 +536,7 @@ function App() {
                   <img
                     class="w-full h-full select-none pointer-events-none object-contain scale-80"
                     src={`/flower-${rect.flower}.png`}
+                    alt=""
                     style={{
                       filter: `drop-shadow(5px 5px 10px rgba(0, 0, 0, 0.3))`,
                     }}
