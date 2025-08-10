@@ -9,7 +9,6 @@ import {
   ParentComponent,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import gsap from "gsap";
 
 const rects = [...Array(225).keys()].map((i) => {
   const col = i % 15;
@@ -33,7 +32,6 @@ const useCanvasMovement = (props: {
   view: Accessor<HTMLDivElement | undefined>;
 }) => {
   const [isDragging, setIsDragging] = createSignal(false);
-  const [isZooming, setIsZooming] = createSignal(false);
   const [transformVersion, setTransformVersion] = createSignal(0);
 
   // --- State & Physics Variables ---
@@ -47,6 +45,8 @@ const useCanvasMovement = (props: {
   let lastTranslateX = 0,
     lastTranslateY = 0;
   let animationId: number | null = null;
+
+  // Pan physics
   let velocityX = 0,
     velocityY = 0;
   const lerpFactor = 0.15;
@@ -55,7 +55,15 @@ const useCanvasMovement = (props: {
   const rubberBandStiffness = 0.85;
   const minVelocity = 0.01;
 
-  // --- Add state for pinch gesture ---
+  // --- Zoom Physics ---
+  let scaleVelocity = 0;
+  const zoomFriction = 0.9; // Increased for less inertia
+  const zoomSnapBackStiffness = 0.05; // Added for rubber-band effect
+  const minScale = 0.5;
+  const maxScale = 2.0;
+  let lastZoomFocalPoint = { x: 0, y: 0 };
+
+  // --- State for pinch gesture ---
   let lastPinchDist: number | null = null;
 
   // --- Bounding Box Definition ---
@@ -102,8 +110,10 @@ const useCanvasMovement = (props: {
   };
 
   const animate = () => {
-    let isSettled = false;
+    // --- Pan Physics ---
+    let panIsSettled;
     if (isDragging()) {
+      panIsSettled = false;
       const dx = (targetX - translateX) * lerpFactor;
       const dy = (targetY - translateY) * lerpFactor;
       translateX += dx;
@@ -122,19 +132,50 @@ const useCanvasMovement = (props: {
       velocityY *= friction;
       translateX += velocityX;
       translateY += velocityY;
-      isSettled =
+      panIsSettled =
         Math.abs(velocityX) < minVelocity &&
         Math.abs(velocityY) < minVelocity &&
-        Math.abs(clampedX - translateX) < 0.5 &&
-        Math.abs(clampedY - translateY) < 0.5;
-      if (isSettled) {
+        Math.abs(clampedX - translateX) < 0.5;
+
+      if (panIsSettled) {
         translateX = clampedX;
         translateY = clampedY;
       }
     }
+
+    // --- Zoom Physics with Rubber Banding ---
+    const clampedScale = Math.max(minScale, Math.min(maxScale, scale));
+    const scaleForce = (clampedScale - scale) * zoomSnapBackStiffness;
+    scaleVelocity += scaleForce;
+    scaleVelocity *= zoomFriction;
+
+    const oldScale = scale;
+    scale += scaleVelocity;
+
+    // Adjust translation based on the new scale to keep the focal point correct
+    if (Math.abs(scaleVelocity) > 0.00001) {
+      const scaleRatio = scale / oldScale;
+      translateX =
+        lastZoomFocalPoint.x - (lastZoomFocalPoint.x - translateX) * scaleRatio;
+      translateY =
+        lastZoomFocalPoint.y - (lastZoomFocalPoint.y - translateY) * scaleRatio;
+      targetX = translateX;
+      targetY = translateY;
+    }
+
+    const zoomIsSettled =
+      Math.abs(scaleVelocity) < 0.0001 &&
+      Math.abs(clampedScale - scale) < 0.001;
+    if (zoomIsSettled) {
+      scale = clampedScale;
+      scaleVelocity = 0;
+    }
+
     updateTransform();
     setTransformVersion((v) => v + 1);
-    if (isSettled) {
+
+    const allSettled = panIsSettled && zoomIsSettled;
+    if (allSettled) {
       animationId = null;
     } else {
       animationId = requestAnimationFrame(animate);
@@ -145,7 +186,7 @@ const useCanvasMovement = (props: {
     if (!animationId) animationId = requestAnimationFrame(animate);
   };
 
-  // Non-animated zoom function for pinch gestures
+  // Non-animated zoom function for pinch gestures (remains unchanged)
   const pinchZoom = (factor: number, screenX: number, screenY: number) => {
     if (animationId) {
       cancelAnimationFrame(animationId);
@@ -153,10 +194,11 @@ const useCanvasMovement = (props: {
     }
     velocityX = 0;
     velocityY = 0;
+    scaleVelocity = 0;
 
     const oldScale = scale;
     let newScale = oldScale * factor;
-    newScale = Math.max(0.25, Math.min(4, newScale));
+    newScale = Math.max(minScale, Math.min(maxScale, newScale));
 
     const scaleRatio = newScale / oldScale;
 
@@ -173,90 +215,35 @@ const useCanvasMovement = (props: {
     setTransformVersion((v) => v + 1);
   };
 
-  // Animated zoom for buttons and mouse wheel
-  const zoom = (factor: number, screenX: number, screenY: number) => {
+  // Function to apply zoom velocity
+  const applyZoom = (delta: number, focalX: number, focalY: number) => {
     setIsDragging(false);
-    if (animationId) {
-      cancelAnimationFrame(animationId);
-      animationId = null;
-    }
     velocityX = 0;
     velocityY = 0;
 
-    const oldScale = scale;
-    let newScale = oldScale * factor;
-    newScale = Math.max(0.25, Math.min(4, newScale));
-    const scaleRatio = newScale / oldScale;
-    const newTranslateX = screenX - (screenX - translateX) * scaleRatio;
-    const newTranslateY = screenY - (screenY - translateY) * scaleRatio;
-
-    const containerEl = props.container();
-    if (!containerEl) return;
-    const { clientWidth: viewportWidth, clientHeight: viewportHeight } =
-      containerEl;
-    const scaledContentWidth = boundingBox.width * newScale;
-    const scaledContentHeight = boundingBox.height * newScale;
-    const boxWorldX = -boundingBox.width / 2;
-    const boxWorldY = -boundingBox.height / 2;
-    let minX, maxX, minY, maxY;
-
-    if (scaledContentWidth <= viewportWidth) {
-      minX = maxX =
-        (viewportWidth - scaledContentWidth) / 2 - boxWorldX * newScale;
-    } else {
-      maxX = -boxWorldX * newScale;
-      minX = viewportWidth - (boxWorldX + boundingBox.width) * newScale;
-    }
-    if (scaledContentHeight <= viewportHeight) {
-      minY = maxY =
-        (viewportHeight - scaledContentHeight) / 2 - boxWorldY * newScale;
-    } else {
-      maxY = -boxWorldY * newScale;
-      minY = viewportHeight - (boxWorldY + boundingBox.height) * newScale;
-    }
-
-    const finalTranslateX = Math.max(minX, Math.min(maxX, newTranslateX));
-    const finalTranslateY = Math.max(minY, Math.min(maxY, newTranslateY));
-
-    gsap.to(
-      { s: scale, x: translateX, y: translateY },
-      {
-        s: newScale,
-        x: finalTranslateX,
-        y: finalTranslateY,
-        duration: 0.6,
-        ease: "power2.out",
-        overwrite: true,
-        onStart: () => {
-          setIsZooming(true);
-        },
-        onUpdate: function () {
-          const current = this.targets()[0];
-          scale = current.s;
-          translateX = current.x;
-          translateY = current.y;
-          targetX = translateX;
-          targetY = translateY;
-          updateTransform();
-          setTransformVersion((v) => v + 1);
-        },
-        onComplete: () => {
-          setIsZooming(false);
-        },
-      }
-    );
+    lastZoomFocalPoint = { x: focalX, y: focalY };
+    scaleVelocity += delta;
+    startAnimation();
   };
 
   const zoomIn = () => {
     const containerEl = props.container();
     if (containerEl)
-      zoom(1.25, containerEl.clientWidth / 2, containerEl.clientHeight / 2);
+      applyZoom(
+        0.02,
+        containerEl.clientWidth / 2,
+        containerEl.clientHeight / 2
+      );
   };
 
   const zoomOut = () => {
     const containerEl = props.container();
     if (containerEl)
-      zoom(0.8, containerEl.clientWidth / 2, containerEl.clientHeight / 2);
+      applyZoom(
+        -0.02,
+        containerEl.clientWidth / 2,
+        containerEl.clientHeight / 2
+      );
   };
 
   const setup = () => {
@@ -270,7 +257,6 @@ const useCanvasMovement = (props: {
   };
 
   const panStart = (x: number, y: number) => {
-    if (isZooming()) return;
     setIsDragging(true);
     startX = x;
     startY = y;
@@ -280,6 +266,7 @@ const useCanvasMovement = (props: {
     targetY = translateY;
     velocityX = 0;
     velocityY = 0;
+    scaleVelocity = 0; // Stop zoom inertia when panning starts
     startAnimation();
   };
 
@@ -343,11 +330,9 @@ const useCanvasMovement = (props: {
   const onMouseUp = (e: MouseEvent) => panEnd(e.clientX, e.clientY);
 
   const onWheel = (e: WheelEvent) => {
-    if (isZooming()) return;
     e.preventDefault();
-    // --- FIX: Added the missing zoomFactor definition ---
-    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    zoom(zoomFactor, e.clientX, e.clientY);
+    const delta = e.deltaY * -0.000045; // Slower scroll zoom
+    applyZoom(delta, e.clientX, e.clientY);
   };
 
   const onTouchStart = (e: TouchEvent) => {
@@ -408,7 +393,9 @@ const useCanvasMovement = (props: {
 
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
-    containerEl.addEventListener("touchstart", onTouchStart, { passive: false });
+    containerEl.addEventListener("touchstart", onTouchStart, {
+      passive: false,
+    });
     containerEl.addEventListener("touchmove", onTouchMove, { passive: false });
     containerEl.addEventListener("touchend", onTouchEnd);
     containerEl.addEventListener("touchcancel", onTouchEnd);
@@ -426,13 +413,11 @@ const useCanvasMovement = (props: {
       containerEl.removeEventListener("touchcancel", onTouchEnd);
       observer.disconnect();
       if (animationId) cancelAnimationFrame(animationId);
-      gsap.killTweensOf({});
     });
   });
 
   return {
     isDragging,
-    isZooming,
     zoomIn,
     zoomOut,
     onMouseDown,
@@ -518,13 +503,11 @@ const Canvas: Component<{
     <>
       <style>{`
         [data-dragging="true"] { cursor: grabbing; }
-        [data-zooming="true"] { cursor: wait; }
       `}</style>
       <div
         ref={containerRef}
         class="h-dvh w-full fixed top-0 left-0 cursor-grab select-none"
         data-dragging={movement.isDragging()}
-        data-zooming={movement.isZooming()}
         onMouseDown={movement.onMouseDown}
         onWheel={movement.onWheel}
         onTouchStart={movement.onTouchStart}
