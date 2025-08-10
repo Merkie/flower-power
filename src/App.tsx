@@ -1,28 +1,42 @@
+/**
+ * @name SolidJS Interactive Canvas Template
+ * @version 1.0.0
+ *
+ * @description
+ * This project serves as a reusable, high-performance template for creating an interactive,
+ * pannable, and zoomable canvas experience using SolidJS. It is completely "headless" and
+ * relies on a core `useCanvasMovement` hook to handle all physics and user interactions.
+ *
+ * @features
+ * - Physics-Based Interactions: Smooth, inertial panning and zooming with velocity.
+ * - Mobile-First Design: Full support for touch gestures, including one-finger pan and two-finger pinch-to-zoom.
+ * - Rubber-Banding: Native-style elastic feedback when panning or zooming past the defined boundaries.
+ * - Headless Hook: The `useCanvasMovement` hook is completely decoupled from the DOM elements it controls,
+ * making it highly reusable for various applications.
+ * - Dynamic Background: The background is a separate DOM element that moves and scales with the canvas,
+ * preventing common rendering glitches on browsers like Safari.
+ *
+ * @setup
+ * To ensure proper functionality, especially on mobile devices, the following setup is crucial:
+ *
+ * 1. HTML Viewport Meta Tag:
+ * Your main `index.html` file MUST include a viewport meta tag that disables the browser's
+ * native scaling and zooming. This allows the canvas to handle all touch events.
+ * <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+ *
+ * 2. Global CSS:
+ * It's recommended to apply `overflow: hidden` and `touch-action: none` to the `body` or a root
+ * container in your global stylesheet to prevent scrollbars and unwanted browser gestures.
+ */
+
 import {
   Accessor,
   Component,
-  createEffect,
   createSignal,
-  For,
   onCleanup,
   onMount,
-  ParentComponent,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
-
-const rects = [...Array(225).keys()].map((i) => {
-  const col = i % 15;
-  const row = Math.floor(i / 15);
-  const yOffset = col % 2 !== 0 ? 150 : 0;
-
-  return {
-    x: col * 400 + 50 - 3000,
-    y: row * 400 + 50 - 3000 + yOffset,
-    width: 300,
-    height: 300,
-    flower: Math.floor(Math.random() * 15) + 1,
-  };
-});
 
 /**
  * A headless SolidJS hook to manage pan-and-zoom physics for a canvas-like element.
@@ -32,17 +46,15 @@ const useCanvasMovement = (props: {
   view: Accessor<HTMLDivElement | undefined>;
   background?: Accessor<HTMLDivElement | undefined>;
   options?: {
-    backgroundImage?: {
-      src: string;
-      size: number; // Static size for the background image
-    };
+    backgroundImage?: { src: string; size: number };
   };
 }) => {
-  const initialBgSize = props.options?.backgroundImage?.size || 500;
-
   const [isDragging, setIsDragging] = createSignal(false);
   const [isPinching, setIsPinching] = createSignal(false);
   const [transformVersion, setTransformVersion] = createSignal(0);
+
+  // --- Initial Setup ---
+  const initialBackgroundSize = props.options?.backgroundImage?.size || 500;
 
   // --- State & Physics Variables ---
   let scale = 1;
@@ -90,10 +102,12 @@ const useCanvasMovement = (props: {
       viewEl.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
     }
     if (backgroundEl) {
-      backgroundEl.style.backgroundPosition = `${translateX}px ${translateY}px`;
-      backgroundEl.style.backgroundSize = `${initialBgSize * scale}px ${
-        initialBgSize * scale
-      }px`;
+      const bgSize = Math.round(initialBackgroundSize * scale);
+      const bgX = Math.round(translateX);
+      const bgY = Math.round(translateY);
+
+      backgroundEl.style.backgroundSize = `${bgSize}px ${bgSize}px`;
+      backgroundEl.style.backgroundPosition = `${bgX}px ${bgY}px`;
     }
   };
 
@@ -318,27 +332,9 @@ const useCanvasMovement = (props: {
     }
   };
 
-  const panEnd = (x: number, y: number) => {
+  const panEnd = (_x: number, _y: number) => {
     if (isDragging()) {
       setIsDragging(false);
-      const distance = Math.sqrt(
-        Math.pow(targetX - lastTranslateX, 2) +
-          Math.pow(targetY - lastTranslateY, 2)
-      );
-      if (distance < 10) {
-        const worldX = (x - translateX) / scale;
-        const worldY = (y - translateY) / scale;
-        const clickedRect = rects.find(
-          (rect) =>
-            worldX >= rect.x &&
-            worldX <= rect.x + rect.width &&
-            worldY >= rect.y &&
-            worldY <= rect.y + rect.height
-        );
-        if (clickedRect) {
-          console.log("Tapped on rect:", rects.indexOf(clickedRect) + 1);
-        }
-      }
     }
   };
 
@@ -463,68 +459,13 @@ const useCanvasMovement = (props: {
 
 type CanvasMovement = ReturnType<typeof useCanvasMovement>;
 
-const FadingWorldObject: ParentComponent<{
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  movement: CanvasMovement;
-}> = (props) => {
-  const [scale, setScale] = createSignal(0);
-
-  createEffect(() => {
-    props.movement.transformVersion();
-    const containerEl = props.movement.container();
-    if (!containerEl) return;
-    const { x: tx, y: ty, s } = props.movement.transform();
-    const objectBox = {
-      x: props.x,
-      y: props.y,
-      width: props.width,
-      height: props.height,
-    };
-    const viewBox = {
-      x: -tx / s,
-      y: -ty / s,
-      width: containerEl.clientWidth / s,
-      height: containerEl.clientHeight / s,
-    };
-    const intersects =
-      objectBox.x < viewBox.x + viewBox.width &&
-      objectBox.x + objectBox.width > viewBox.x &&
-      objectBox.y < viewBox.y + viewBox.height &&
-      objectBox.y + objectBox.height > viewBox.y;
-    setScale(intersects ? 1 : 0);
-  });
-
-  return (
-    <div
-      class="absolute pointer-events-none"
-      style={{
-        width: `${props.width}px`,
-        height: `${props.height}px`,
-        top: `${props.y}px`,
-        left: `${props.x}px`,
-        transform: `scale(${scale()})`,
-        transition: "transform 0.5s ease-out",
-        "transition-delay": "0.1s",
-      }}
-    >
-      {props.children}
-    </div>
-  );
-};
-
 const Canvas: Component<{
   world: Component<{ movement: CanvasMovement }>;
   hud: Component<{ movement: CanvasMovement }>;
   options?: {
-    backgroundImage?: {
-      src: string;
-      size: number;
-    };
+    backgroundImage?: { src: string; size: number };
   };
-}> = ({ world, hud, options }) => {
+}> = ({ options, world, hud }) => {
   let containerRef: HTMLDivElement | undefined;
   let viewRef: HTMLDivElement | undefined;
   let backgroundRef: HTMLDivElement | undefined;
@@ -538,11 +479,6 @@ const Canvas: Component<{
     },
   });
 
-  onMount(() => {
-    if (!backgroundRef) return;
-    backgroundRef.style.backgroundImage = `url(${options?.backgroundImage?.src})`;
-  });
-
   return (
     <>
       <style>{`
@@ -550,7 +486,6 @@ const Canvas: Component<{
         [data-dragging="true"] { cursor: grabbing; }
         [data-pinching="true"] { cursor: zoom-in; }
       `}</style>
-      {/* --- FIX: Use the user's provided background image and set a static size --- */}
       <div ref={backgroundRef} class="fixed top-0 left-0 w-full h-full" />
       <div
         ref={containerRef}
@@ -579,55 +514,58 @@ function App() {
         options={{
           backgroundImage: {
             src: "/background.png",
-            size: 980, // Static size for the background image
+            size: 800, // Size in pixels for the background image
           },
         }}
-        world={({ movement }) => {
+        world={() => {
+          // You can place any elements you want to move with the canvas inside this 'world' slot.
+          // They should be positioned absolutely relative to the top-left of the canvas world.
+          // The coordinates are based on the center of the boundingBox (0,0).
           return (
-            <For each={rects}>
-              {(rect) => (
-                <FadingWorldObject
-                  x={rect.x}
-                  y={rect.y}
-                  width={rect.width}
-                  height={rect.height}
-                  movement={movement}
-                >
-                  <img
-                    class="w-full h-full select-none pointer-events-none object-contain scale-80"
-                    src={`/flower-${rect.flower}.png`}
-                    alt=""
-                    style={{
-                      filter: `drop-shadow(5px 5px 10px rgba(0, 0, 0, 0.3))`,
-                    }}
-                  />
-                </FadingWorldObject>
-              )}
-            </For>
+            <>
+              <div
+                class="absolute w-[300px] h-[300px] bg-blue-500 rounded-md shadow-lg"
+                style={{
+                  top: "-150px",
+                  left: "-150px",
+                }}
+              />
+              <div
+                class="absolute w-[200px] h-[200px] bg-red-500 rounded-full shadow-lg"
+                style={{
+                  top: "200px",
+                  left: "300px",
+                }}
+              />
+            </>
           );
         }}
-        hud={({ movement }) => (
-          <div class="absolute bottom-4 right-4 flex items-center gap-2">
-            <button
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                movement.zoomIn();
-              }}
-              class="w-10 h-10 bg-white grid place-items-center rounded border-2 font-bold text-lg shadow-md hover:bg-gray-50 active:scale-95 transition-transform"
-            >
-              +
-            </button>
-            <button
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                movement.zoomOut();
-              }}
-              class="w-10 h-10 bg-white grid place-items-center rounded border-2 font-bold text-lg shadow-md hover:bg-gray-50 active:scale-95 transition-transform"
-            >
-              -
-            </button>
-          </div>
-        )}
+        hud={({ movement }) => {
+          // The 'hud' slot is for UI elements that should remain static on the screen,
+          // like zoom buttons, menus, or info displays.
+          return (
+            <div class="absolute bottom-4 right-4 flex items-center gap-2">
+              <button
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  movement.zoomIn();
+                }}
+                class="w-10 h-10 bg-white grid place-items-center rounded border-2 font-bold text-lg shadow-md hover:bg-gray-50 active:scale-95 transition-transform"
+              >
+                +
+              </button>
+              <button
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  movement.zoomOut();
+                }}
+                class="w-10 h-10 bg-white grid place-items-center rounded border-2 font-bold text-lg shadow-md hover:bg-gray-50 active:scale-95 transition-transform"
+              >
+                -
+              </button>
+            </div>
+          );
+        }}
       />
     </>
   );
