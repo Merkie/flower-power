@@ -513,9 +513,9 @@ const Canvas: Component<{
     view: () => viewRef,
     onCanvasTransform: (x, y, scale) => {
       if (!backgroundRef) return;
-      const bgSize = 25 * scale;
-      backgroundRef.style.backgroundSize = `${bgSize}px ${bgSize}px`;
+
       backgroundRef.style.backgroundPosition = `${x}px ${y}px`;
+      backgroundRef.style.backgroundSize = `${740 * scale}px ${740 * scale}px`;
     },
   });
 
@@ -526,12 +526,13 @@ const Canvas: Component<{
         [data-dragging="true"] { cursor: grabbing; }
         [data-pinching="true"] { cursor: zoom-in; }
       `}</style>
+      {/* --- FIX: Use the user's provided background image and set a static size --- */}
       <div
         ref={backgroundRef}
         class="fixed top-0 left-0 w-full h-full"
         style={{
-          "background-image":
-            "radial-gradient(circle at 1px 1px, #cbd5e1 1px, transparent 0)",
+          "background-image": "url(/background-740.png)",
+          "background-size": "740px 740px",
         }}
       />
       <div
