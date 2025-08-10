@@ -15,14 +15,11 @@ function App() {
       }}
       world={({ movement }) => (
         <>
-          <div
-            class="absolute w-[300px] h-[300px] bg-red-500/80 rounded-full shadow-lg"
-            style={{
-              transform: `translate(-50%, -50%)`,
-              left: `0px`,
-              top: `0px`,
-            }}
-          />
+          <div class="w-[50px] h-[50px] absolute left-0 top-0">
+            <div class="w-[1px] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[50px] bg-black"></div>
+            <div class="w-[50px] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[1px] bg-black"></div>
+            <p class="absolute right-0 top-0">0,0</p>
+          </div>
           <Draggable movement={movement} initialPos={{ x: -300, y: -200 }} />
           <InteractiveCard />
         </>
