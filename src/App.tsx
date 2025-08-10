@@ -1,4 +1,5 @@
 import { Canvas } from "./components/Canvas";
+import { Connectable } from "./components/Connectable";
 import { Draggable } from "./components/Draggable";
 import { InteractiveCard } from "./components/InteractiveCard";
 
@@ -21,6 +22,21 @@ function App() {
           </div>
           <Draggable movement={movement} initialPos={{ x: -300, y: -200 }} />
           <InteractiveCard />
+          <Connectable
+            id="foo"
+            movement={movement}
+            initialPos={{ x: -300, y: -100 }}
+          />
+          <Connectable
+            id="bar"
+            movement={movement}
+            initialPos={{ x: 100, y: 50 }}
+          />
+          <Connectable
+            id="baz"
+            movement={movement}
+            initialPos={{ x: -50, y: 200 }}
+          />
         </>
       )}
       hud={({ movement }) => (
