@@ -258,7 +258,6 @@ const useCanvasMovement = (props: {
     targetX = translateX;
     targetY = translateY;
     updateTransform();
-    // --- FIX: Trigger the transform callback on initial setup ---
     setTransformVersion((v) => v + 1);
   };
 
@@ -356,7 +355,7 @@ const useCanvasMovement = (props: {
         touch1.clientX - touch2.clientX,
         touch1.clientY - touch2.clientY
       );
-      targetScale = scale; // Initialize target scale
+      targetScale = scale;
       startAnimation();
     }
   };
@@ -374,7 +373,7 @@ const useCanvasMovement = (props: {
         touch1.clientY - touch2.clientY
       );
       const factor = newDist / lastPinchDist;
-      targetScale *= factor; // Update the target scale instead of direct manipulation
+      targetScale *= factor;
       lastPinchDist = newDist;
       lastZoomFocalPoint = {
         x: (touch1.clientX + touch2.clientX) / 2,
@@ -396,7 +395,6 @@ const useCanvasMovement = (props: {
     }
   };
 
-  // --- CLEANUP: Removed direct DOM manipulation from the hook ---
   createEffect(() => {
     transformVersion();
     props.onCanvasTransform?.(translateX, translateY, scale);
@@ -508,37 +506,34 @@ const Canvas: Component<{
 }> = ({ world, hud }) => {
   let containerRef: HTMLDivElement | undefined;
   let viewRef: HTMLDivElement | undefined;
+  let backgroundRef: HTMLDivElement | undefined;
 
   const movement = useCanvasMovement({
     container: () => containerRef,
     view: () => viewRef,
     onCanvasTransform: (x, y, scale) => {
+      if (!backgroundRef) return;
       const bgSize = 25 * scale;
-      document.body.style.backgroundSize = `${bgSize}px ${bgSize}px`;
-      document.body.style.backgroundPosition = `${x}px ${y}px`;
+      backgroundRef.style.backgroundSize = `${bgSize}px ${bgSize}px`;
+      backgroundRef.style.backgroundPosition = `${x}px ${y}px`;
     },
-  });
-
-  // --- NEW: The component using the hook now manages its own side effects and cleanup ---
-  onMount(() => {
-    document.body.style.backgroundImage =
-      "radial-gradient(circle at 1px 1px, #cbd5e1 1px, transparent 0)";
-    document.body.style.backgroundColor = "#f3f4f6";
-
-    onCleanup(() => {
-      document.body.style.backgroundImage = "";
-      document.body.style.backgroundColor = "";
-      document.body.style.backgroundSize = "";
-      document.body.style.backgroundPosition = "";
-    });
   });
 
   return (
     <>
       <style>{`
+        body { background-color: #f3f4f6; }
         [data-dragging="true"] { cursor: grabbing; }
         [data-pinching="true"] { cursor: zoom-in; }
       `}</style>
+      <div
+        ref={backgroundRef}
+        class="fixed top-0 left-0 w-full h-full"
+        style={{
+          "background-image":
+            "radial-gradient(circle at 1px 1px, #cbd5e1 1px, transparent 0)",
+        }}
+      />
       <div
         ref={containerRef}
         class="h-dvh w-full fixed top-0 left-0 cursor-grab select-none"
