@@ -30,6 +30,7 @@ const rects = [...Array(225).keys()].map((i) => {
 const useCanvasMovement = (props: {
   container: Accessor<HTMLDivElement | undefined>;
   view: Accessor<HTMLDivElement | undefined>;
+  onCanvasTransform?: (x: number, y: number, scale: number) => void;
 }) => {
   const [isDragging, setIsDragging] = createSignal(false);
   const [isPinching, setIsPinching] = createSignal(false);
@@ -257,6 +258,8 @@ const useCanvasMovement = (props: {
     targetX = translateX;
     targetY = translateY;
     updateTransform();
+    // --- FIX: Trigger the transform callback on initial setup ---
+    setTransformVersion((v) => v + 1);
   };
 
   const panStart = (x: number, y: number) => {
@@ -393,6 +396,12 @@ const useCanvasMovement = (props: {
     }
   };
 
+  // --- CLEANUP: Removed direct DOM manipulation from the hook ---
+  createEffect(() => {
+    transformVersion();
+    props.onCanvasTransform?.(translateX, translateY, scale);
+  });
+
   onMount(() => {
     const containerEl = props.container();
     if (!containerEl) return;
@@ -496,21 +505,39 @@ const FadingWorldObject: ParentComponent<{
 const Canvas: Component<{
   world: Component<{ movement: CanvasMovement }>;
   hud: Component<{ movement: CanvasMovement }>;
-  background: Component;
-}> = ({ world, hud, background }) => {
+}> = ({ world, hud }) => {
   let containerRef: HTMLDivElement | undefined;
   let viewRef: HTMLDivElement | undefined;
 
   const movement = useCanvasMovement({
     container: () => containerRef,
     view: () => viewRef,
+    onCanvasTransform: (x, y, scale) => {
+      const bgSize = 25 * scale;
+      document.body.style.backgroundSize = `${bgSize}px ${bgSize}px`;
+      document.body.style.backgroundPosition = `${x}px ${y}px`;
+    },
+  });
+
+  // --- NEW: The component using the hook now manages its own side effects and cleanup ---
+  onMount(() => {
+    document.body.style.backgroundImage =
+      "radial-gradient(circle at 1px 1px, #cbd5e1 1px, transparent 0)";
+    document.body.style.backgroundColor = "#f3f4f6";
+
+    onCleanup(() => {
+      document.body.style.backgroundImage = "";
+      document.body.style.backgroundColor = "";
+      document.body.style.backgroundSize = "";
+      document.body.style.backgroundPosition = "";
+    });
   });
 
   return (
     <>
       <style>{`
         [data-dragging="true"] { cursor: grabbing; }
-        [data-pinching="true"] { cursor: zoom-in; } /* Optional: Add a cursor for pinching state */
+        [data-pinching="true"] { cursor: zoom-in; }
       `}</style>
       <div
         ref={containerRef}
@@ -524,15 +551,6 @@ const Canvas: Component<{
         onTouchEnd={movement.onTouchEnd}
       >
         <div ref={viewRef} class="absolute origin-top-left">
-          <div
-            class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-            style={{
-              width: `${movement.boundingBox.width}px`,
-              height: `${movement.boundingBox.height}px`,
-            }}
-          >
-            <Dynamic component={background} />
-          </div>
           <Dynamic component={world} movement={movement} />
         </div>
       </div>
@@ -544,7 +562,6 @@ const Canvas: Component<{
 function App() {
   return (
     <>
-      <style>{`body { background: #f3f4f6; }`}</style>
       <Canvas
         world={({ movement }) => {
           return (
@@ -590,18 +607,6 @@ function App() {
             >
               -
             </button>
-          </div>
-        )}
-        background={() => (
-          <div class="h-full w-full relative bg-white">
-            <div
-              class="h-full w-full absolute inset-0"
-              style={{
-                "background-image":
-                  "radial-gradient(circle at 1px 1px, #cbd5e1 1px, transparent 0)",
-                "background-size": "25px 25px",
-              }}
-            />
           </div>
         )}
       />
