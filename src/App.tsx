@@ -30,8 +30,16 @@ const rects = [...Array(225).keys()].map((i) => {
 const useCanvasMovement = (props: {
   container: Accessor<HTMLDivElement | undefined>;
   view: Accessor<HTMLDivElement | undefined>;
-  onCanvasTransform?: (x: number, y: number, scale: number) => void;
+  background?: Accessor<HTMLDivElement | undefined>;
+  options?: {
+    backgroundImage?: {
+      src: string;
+      size: number; // Static size for the background image
+    };
+  };
 }) => {
+  const initialBgSize = props.options?.backgroundImage?.size || 500;
+
   const [isDragging, setIsDragging] = createSignal(false);
   const [isPinching, setIsPinching] = createSignal(false);
   const [transformVersion, setTransformVersion] = createSignal(0);
@@ -77,8 +85,15 @@ const useCanvasMovement = (props: {
   // --- Core Functions ---
   const updateTransform = () => {
     const viewEl = props.view();
+    const backgroundEl = props.background?.();
     if (viewEl) {
       viewEl.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+    }
+    if (backgroundEl) {
+      backgroundEl.style.backgroundPosition = `${translateX}px ${translateY}px`;
+      backgroundEl.style.backgroundSize = `${initialBgSize * scale}px ${
+        initialBgSize * scale
+      }px`;
     }
   };
 
@@ -395,14 +410,14 @@ const useCanvasMovement = (props: {
     }
   };
 
-  createEffect(() => {
-    transformVersion();
-    props.onCanvasTransform?.(translateX, translateY, scale);
-  });
-
   onMount(() => {
     const containerEl = props.container();
+    const backgroundEl = props.background?.();
     if (!containerEl) return;
+
+    if (backgroundEl) {
+      backgroundEl.style.backgroundImage = `url(${props.options?.backgroundImage?.src})`;
+    }
 
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
@@ -503,7 +518,13 @@ const FadingWorldObject: ParentComponent<{
 const Canvas: Component<{
   world: Component<{ movement: CanvasMovement }>;
   hud: Component<{ movement: CanvasMovement }>;
-}> = ({ world, hud }) => {
+  options?: {
+    backgroundImage?: {
+      src: string;
+      size: number;
+    };
+  };
+}> = ({ world, hud, options }) => {
   let containerRef: HTMLDivElement | undefined;
   let viewRef: HTMLDivElement | undefined;
   let backgroundRef: HTMLDivElement | undefined;
@@ -511,12 +532,15 @@ const Canvas: Component<{
   const movement = useCanvasMovement({
     container: () => containerRef,
     view: () => viewRef,
-    onCanvasTransform: (x, y, scale) => {
-      if (!backgroundRef) return;
-
-      backgroundRef.style.backgroundPosition = `${x}px ${y}px`;
-      backgroundRef.style.backgroundSize = `${740 * scale}px ${740 * scale}px`;
+    background: () => backgroundRef,
+    options: {
+      backgroundImage: options?.backgroundImage,
     },
+  });
+
+  onMount(() => {
+    if (!backgroundRef) return;
+    backgroundRef.style.backgroundImage = `url(${options?.backgroundImage?.src})`;
   });
 
   return (
@@ -527,14 +551,7 @@ const Canvas: Component<{
         [data-pinching="true"] { cursor: zoom-in; }
       `}</style>
       {/* --- FIX: Use the user's provided background image and set a static size --- */}
-      <div
-        ref={backgroundRef}
-        class="fixed top-0 left-0 w-full h-full"
-        style={{
-          "background-image": "url(/background-740.png)",
-          "background-size": "740px 740px",
-        }}
-      />
+      <div ref={backgroundRef} class="fixed top-0 left-0 w-full h-full" />
       <div
         ref={containerRef}
         class="h-dvh w-full fixed top-0 left-0 cursor-grab select-none"
@@ -559,6 +576,12 @@ function App() {
   return (
     <>
       <Canvas
+        options={{
+          backgroundImage: {
+            src: "/background.png",
+            size: 980, // Static size for the background image
+          },
+        }}
         world={({ movement }) => {
           return (
             <For each={rects}>
