@@ -32,6 +32,7 @@ const useCanvasMovement = (props: {
   view: Accessor<HTMLDivElement | undefined>;
 }) => {
   const [isDragging, setIsDragging] = createSignal(false);
+  const [isPinching, setIsPinching] = createSignal(false);
   const [transformVersion, setTransformVersion] = createSignal(0);
 
   // --- State & Physics Variables ---
@@ -56,16 +57,18 @@ const useCanvasMovement = (props: {
   const minVelocity = 0.01;
 
   // --- Zoom Physics ---
+  let targetScale = 1;
   let scaleVelocity = 0;
-  const zoomFriction = 0.92; // Adjusted for smoother inertia
+  const zoomFriction = 0.92;
   const zoomSnapBackStiffness = 0.05;
+  const zoomLerpFactor = 0.15; // For smooth pinch-zooming
   const minScale = 0.5;
   const maxScale = 2.0;
   let lastZoomFocalPoint = { x: 0, y: 0 };
 
   // --- State for pinch gesture ---
   let lastPinchDist: number | null = null;
-  const pinchRubberBandStiffness = 0.25; // Decreased for a softer feel
+  const pinchRubberBandStiffness = 0.25;
 
   // --- Bounding Box Definition ---
   const boundingBox = { width: 6000, height: 6000 };
@@ -137,7 +140,7 @@ const useCanvasMovement = (props: {
         Math.abs(velocityX) < minVelocity &&
         Math.abs(velocityY) < minVelocity &&
         Math.abs(clampedX - translateX) < 0.5 &&
-        Math.abs(clampedY - translateY) < 0.5; // Fixed bug here
+        Math.abs(clampedY - translateY) < 0.5;
 
       if (panIsSettled) {
         translateX = clampedX;
@@ -145,16 +148,25 @@ const useCanvasMovement = (props: {
       }
     }
 
-    // --- Zoom Physics with Rubber Banding ---
-    const clampedScale = Math.max(minScale, Math.min(maxScale, scale));
-    const scaleForce = (clampedScale - scale) * zoomSnapBackStiffness;
-    scaleVelocity += scaleForce;
-    scaleVelocity *= zoomFriction;
+    // --- Re-engineered Zoom Physics ---
+    let zoomIsSettled;
+    if (isPinching()) {
+      zoomIsSettled = false;
+      let rubberBandedTargetScale = targetScale;
+      if (targetScale < minScale) {
+        rubberBandedTargetScale =
+          minScale - (minScale - targetScale) * pinchRubberBandStiffness;
+      } else if (targetScale > maxScale) {
+        rubberBandedTargetScale =
+          maxScale + (targetScale - maxScale) * pinchRubberBandStiffness;
+      }
 
-    const oldScale = scale;
-    scale += scaleVelocity;
+      const ds = (rubberBandedTargetScale - scale) * zoomLerpFactor;
+      scaleVelocity = ds;
 
-    if (Math.abs(scaleVelocity) > 0.00001) {
+      const oldScale = scale;
+      scale += ds;
+
       const scaleRatio = scale / oldScale;
       translateX =
         lastZoomFocalPoint.x - (lastZoomFocalPoint.x - translateX) * scaleRatio;
@@ -162,14 +174,34 @@ const useCanvasMovement = (props: {
         lastZoomFocalPoint.y - (lastZoomFocalPoint.y - translateY) * scaleRatio;
       targetX = translateX;
       targetY = translateY;
-    }
+    } else {
+      const clampedScale = Math.max(minScale, Math.min(maxScale, scale));
+      const scaleForce = (clampedScale - scale) * zoomSnapBackStiffness;
+      scaleVelocity += scaleForce;
+      scaleVelocity *= zoomFriction;
 
-    const zoomIsSettled =
-      Math.abs(scaleVelocity) < 0.0001 &&
-      Math.abs(clampedScale - scale) < 0.001;
-    if (zoomIsSettled) {
-      scale = clampedScale;
-      scaleVelocity = 0;
+      if (Math.abs(scaleVelocity) > 0.00001) {
+        const oldScale = scale;
+        scale += scaleVelocity;
+
+        const scaleRatio = scale / oldScale;
+        translateX =
+          lastZoomFocalPoint.x -
+          (lastZoomFocalPoint.x - translateX) * scaleRatio;
+        translateY =
+          lastZoomFocalPoint.y -
+          (lastZoomFocalPoint.y - translateY) * scaleRatio;
+        targetX = translateX;
+        targetY = translateY;
+      }
+
+      zoomIsSettled =
+        Math.abs(scaleVelocity) < 0.0001 &&
+        Math.abs(clampedScale - scale) < 0.001;
+      if (zoomIsSettled) {
+        scale = clampedScale;
+        scaleVelocity = 0;
+      }
     }
 
     updateTransform();
@@ -185,40 +217,6 @@ const useCanvasMovement = (props: {
 
   const startAnimation = () => {
     if (!animationId) animationId = requestAnimationFrame(animate);
-  };
-
-  // --- UPDATED: Non-animated zoom for pinch gestures with rubber-banding ---
-  const pinchZoom = (factor: number, screenX: number, screenY: number) => {
-    if (animationId) {
-      cancelAnimationFrame(animationId);
-      animationId = null;
-    }
-    velocityX = 0;
-    velocityY = 0;
-    scaleVelocity = 0;
-
-    const oldScale = scale;
-    let newScale = oldScale * factor;
-
-    // Apply rubber banding instead of a hard clamp
-    if (newScale < minScale) {
-      newScale = minScale - (minScale - newScale) * pinchRubberBandStiffness;
-    } else if (newScale > maxScale) {
-      newScale = maxScale + (newScale - maxScale) * pinchRubberBandStiffness;
-    }
-
-    const scaleRatio = newScale / oldScale;
-    const newTranslateX = screenX - (screenX - translateX) * scaleRatio;
-    const newTranslateY = screenY - (screenY - translateY) * scaleRatio;
-
-    scale = newScale;
-    translateX = newTranslateX;
-    translateY = newTranslateY;
-    targetX = translateX;
-    targetY = translateY;
-
-    updateTransform();
-    setTransformVersion((v) => v + 1);
   };
 
   const applyZoom = (delta: number, focalX: number, focalY: number) => {
@@ -263,6 +261,7 @@ const useCanvasMovement = (props: {
 
   const panStart = (x: number, y: number) => {
     setIsDragging(true);
+    setIsPinching(false);
     startX = x;
     startY = y;
     lastTranslateX = translateX;
@@ -347,12 +346,15 @@ const useCanvasMovement = (props: {
       panStart(touches[0].clientX, touches[0].clientY);
     } else if (touches.length === 2) {
       setIsDragging(false);
+      setIsPinching(true);
       const touch1 = touches[0];
       const touch2 = touches[1];
       lastPinchDist = Math.hypot(
         touch1.clientX - touch2.clientX,
         touch1.clientY - touch2.clientY
       );
+      targetScale = scale; // Initialize target scale
+      startAnimation();
     }
   };
 
@@ -369,10 +371,12 @@ const useCanvasMovement = (props: {
         touch1.clientY - touch2.clientY
       );
       const factor = newDist / lastPinchDist;
-      const midX = (touch1.clientX + touch2.clientX) / 2;
-      const midY = (touch1.clientY + touch2.clientY) / 2;
-      pinchZoom(factor, midX, midY);
+      targetScale *= factor; // Update the target scale instead of direct manipulation
       lastPinchDist = newDist;
+      lastZoomFocalPoint = {
+        x: (touch1.clientX + touch2.clientX) / 2,
+        y: (touch1.clientY + touch2.clientY) / 2,
+      };
     }
   };
 
@@ -380,15 +384,12 @@ const useCanvasMovement = (props: {
     if (isDragging()) {
       panEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
     }
-    const wasPinching = lastPinchDist !== null;
     if (e.touches.length < 2) {
+      setIsPinching(false);
       lastPinchDist = null;
     }
     if (e.touches.length === 0) {
       setIsDragging(false);
-    }
-    if (wasPinching && e.touches.length < 2) {
-      startAnimation();
     }
   };
 
@@ -423,6 +424,7 @@ const useCanvasMovement = (props: {
 
   return {
     isDragging,
+    isPinching,
     zoomIn,
     zoomOut,
     onMouseDown,
@@ -508,11 +510,13 @@ const Canvas: Component<{
     <>
       <style>{`
         [data-dragging="true"] { cursor: grabbing; }
+        [data-pinching="true"] { cursor: zoom-in; } /* Optional: Add a cursor for pinching state */
       `}</style>
       <div
         ref={containerRef}
         class="h-dvh w-full fixed top-0 left-0 cursor-grab select-none"
         data-dragging={movement.isDragging()}
+        data-pinching={movement.isPinching()}
         onMouseDown={movement.onMouseDown}
         onWheel={movement.onWheel}
         onTouchStart={movement.onTouchStart}
