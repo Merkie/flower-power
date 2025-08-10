@@ -57,7 +57,7 @@ const useCanvasMovement = (props: {
 
   // --- Zoom Physics ---
   let scaleVelocity = 0;
-  const zoomFriction = 0.88;
+  const zoomFriction = 0.92; // Adjusted for smoother inertia
   const zoomSnapBackStiffness = 0.05;
   const minScale = 0.5;
   const maxScale = 2.0;
@@ -65,7 +65,7 @@ const useCanvasMovement = (props: {
 
   // --- State for pinch gesture ---
   let lastPinchDist: number | null = null;
-  const pinchRubberBandStiffness = 0.2; // Resistance for pinch rubber-banding
+  const pinchRubberBandStiffness = 0.25; // Decreased for a softer feel
 
   // --- Bounding Box Definition ---
   const boundingBox = { width: 6000, height: 6000 };
@@ -136,7 +136,8 @@ const useCanvasMovement = (props: {
       panIsSettled =
         Math.abs(velocityX) < minVelocity &&
         Math.abs(velocityY) < minVelocity &&
-        Math.abs(clampedX - translateX) < 0.5;
+        Math.abs(clampedX - translateX) < 0.5 &&
+        Math.abs(clampedY - translateY) < 0.5; // Fixed bug here
 
       if (panIsSettled) {
         translateX = clampedX;
