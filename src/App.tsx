@@ -6,7 +6,6 @@ function App() {
   return (
     <Canvas
       options={{
-        feel: "default",
         worldSize: { width: 10000, height: 10000 },
         backgroundImage: {
           src: "/background.png",

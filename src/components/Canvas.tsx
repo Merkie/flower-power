@@ -26,7 +26,6 @@ export const Canvas: Component<CanvasProps> = (props) => {
   return (
     <>
       <style>{`
-        body { background-color: #f3f4f6; }
         [data-dragging="true"] { cursor: grabbing; }
         .canvas-view, .canvas-bg { will-change: transform; }
       `}</style>

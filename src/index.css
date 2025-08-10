@@ -13,4 +13,5 @@ body {
 /* This is the most important rule to prevent native browser pinch-zoom/pan */
 body {
   touch-action: none;
+  background-color: #f3f4f6;
 }
