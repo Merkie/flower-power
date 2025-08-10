@@ -11,12 +11,14 @@ interface DraggableProps {
 export const Draggable: Component<DraggableProps> = (props) => {
   const [pos, setPos] = createSignal(props.initialPos ?? { x: 0, y: 0 });
 
-  const onDragStart = (e: MouseEvent) => {
+  const onPointerDown = (e: PointerEvent) => {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+
     const scale = props.movement.transform().s;
     const startMouse = { x: e.clientX, y: e.clientY };
     const startEl = pos();
 
-    const onDragMove = (moveEvent: MouseEvent) => {
+    const onPointerMove = (moveEvent: PointerEvent) => {
       const dx = moveEvent.clientX - startMouse.x;
       const dy = moveEvent.clientY - startMouse.y;
       setPos({
@@ -25,18 +27,17 @@ export const Draggable: Component<DraggableProps> = (props) => {
       });
     };
 
-    const onDragEnd = () => {
-      window.removeEventListener("mousemove", onDragMove);
-      window.removeEventListener("mouseup", onDragEnd);
+    const onPointerUp = () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
     };
 
-    window.addEventListener("mousemove", onDragMove);
-    window.addEventListener("mouseup", onDragEnd);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
   };
 
   return (
     <div
-      // data-interactive is still crucial here
       data-interactive
       class="absolute w-36 h-36 bg-green-500 rounded-lg shadow-lg grid place-items-center font-bold text-white cursor-grab active:cursor-grabbing"
       style={{
@@ -44,7 +45,7 @@ export const Draggable: Component<DraggableProps> = (props) => {
         left: `${pos().x}px`,
         top: `${pos().y}px`,
       }}
-      onMouseDown={onDragStart}
+      onPointerDown={onPointerDown}
     >
       Drag Me
     </div>

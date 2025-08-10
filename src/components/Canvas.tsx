@@ -25,32 +25,32 @@ export const Canvas: Component<CanvasProps> = (props) => {
 
   return (
     <>
-      {/* These styles are minimal and could be moved to a global CSS file */}
       <style>{`
         body { background-color: #f3f4f6; }
         [data-dragging="true"] { cursor: grabbing; }
-        [data-pinching="true"] { cursor: zoom-in; }
+        .canvas-view, .canvas-bg { will-change: transform; }
       `}</style>
 
-      {/* Background Element (for seamless background) */}
-      <div ref={backgroundRef} class="fixed top-0 left-0 w-full h-full -z-10" />
+      <div
+        ref={backgroundRef}
+        class="canvas-bg fixed top-0 left-0 w-full h-full -z-10"
+      />
 
-      {/* Main Container for events */}
       <div
         ref={containerRef}
         class="h-dvh w-full fixed top-0 left-0 cursor-grab select-none"
         data-dragging={movement.isDragging()}
-        data-pinching={movement.isPinching()}
-        onMouseDown={movement.onMouseDown}
+        onPointerDown={movement.onPointerDown}
+        onPointerMove={movement.onPointerMove}
+        onPointerUp={movement.onPointerUp}
+        onPointerCancel={movement.onPointerUp}
         onWheel={movement.onWheel}
       >
-        {/* The Viewport that moves and scales */}
-        <div ref={viewRef} class="absolute origin-top-left">
+        <div ref={viewRef} class="canvas-view absolute origin-top-left">
           <Dynamic component={props.world} movement={movement} />
         </div>
       </div>
 
-      {/* Optional HUD layer */}
       {props.hud && <Dynamic component={props.hud} movement={movement} />}
     </>
   );

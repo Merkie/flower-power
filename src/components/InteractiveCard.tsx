@@ -3,7 +3,6 @@
 export const InteractiveCard = () => {
   return (
     <div
-      // This attribute prevents canvas panning when interacting with this card
       data-interactive
       class="absolute p-4 bg-white rounded-lg shadow-lg"
       style={{ top: "200px", left: "300px", width: "220px" }}

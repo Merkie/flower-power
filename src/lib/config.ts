@@ -6,16 +6,16 @@ import { Accessor } from "solid-js";
  * 'default': A balanced, slightly floaty feel.
  * 'fluid': Very loose and bouncy with lots of inertia.
  */
-export type BouncinessPreset = "rigid" | "default" | "fluid";
+export type FeelPreset = "rigid" | "default" | "fluid";
 
 // --- TYPE DEFINITIONS ---
 
 export interface CanvasOptions {
-  bounciness?: BouncinessPreset;
+  feel?: FeelPreset;
   worldSize?: { width: number; height: number };
   minScale?: number;
   maxScale?: number;
-  wheelSensitivity?: number; // Renamed for clarity
+  wheelSensitivity?: number;
   backgroundImage?: { src: string; size: number };
 }
 
@@ -24,12 +24,11 @@ export interface CanvasMovementAPI {
   isPinching: Accessor<boolean>;
   zoomIn: () => void;
   zoomOut: () => void;
-  onMouseDown: (e: MouseEvent) => void;
-  onWheel: (e: WheelEvent) => void;
   transform: Accessor<{ x: number; y: number; s: number }>;
 }
 
 // --- PHYSICS PRESETS ---
+
 const physicsProfiles = {
   rigid: {
     panFriction: 0.85,
@@ -67,11 +66,11 @@ const physicsProfiles = {
  * Merges user-provided options with defaults and returns a full configuration object.
  */
 export const createMovementConfig = (options?: CanvasOptions) => {
-  const bounciness = options?.bounciness ?? "default";
-  const physics = physicsProfiles[bounciness];
+  const feel = options?.feel ?? "default";
+  const physics = physicsProfiles[feel];
 
   return {
-    worldSize: options?.worldSize ?? { width: 6000, height: 6000 },
+    worldSize: options?.worldSize ?? { width: 10000, height: 10000 },
     minScale: options?.minScale ?? 0.5,
     maxScale: options?.maxScale ?? 2.0,
     wheelSensitivity: options?.wheelSensitivity ?? 0.0001,

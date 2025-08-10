@@ -1,5 +1,3 @@
-// src/App.tsx
-
 import { Canvas } from "./components/Canvas";
 import { Draggable } from "./components/Draggable";
 import { InteractiveCard } from "./components/InteractiveCard";
@@ -8,8 +6,8 @@ function App() {
   return (
     <Canvas
       options={{
-        bounciness: "rigid", // Try 'rigid' or 'fluid'
-        worldSize: { width: 4000, height: 4000 },
+        feel: "default",
+        worldSize: { width: 10000, height: 10000 },
         backgroundImage: {
           src: "/background.png",
           size: 800,
@@ -17,7 +15,6 @@ function App() {
       }}
       world={({ movement }) => (
         <>
-          {/* A simple, non-interactive element */}
           <div
             class="absolute w-[300px] h-[300px] bg-red-500/80 rounded-full shadow-lg"
             style={{
@@ -26,11 +23,7 @@ function App() {
               top: `0px`,
             }}
           />
-
-          {/* An interactive, draggable element */}
           <Draggable movement={movement} initialPos={{ x: -300, y: -200 }} />
-
-          {/* A static element with clickable inputs */}
           <InteractiveCard />
         </>
       )}

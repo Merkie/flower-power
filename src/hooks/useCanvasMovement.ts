@@ -1,9 +1,12 @@
-// src/hooks/useCanvasMovement.ts
-
-import { createSignal, onCleanup, onMount, Accessor } from "solid-js";
+import {
+  createSignal,
+  onCleanup,
+  onMount,
+  Accessor,
+  createMemo,
+} from "solid-js";
 import { CanvasOptions, createMovementConfig } from "../lib/config";
 
-// Props for the hook, defining the DOM elements it will control
 interface HookProps {
   container: Accessor<HTMLDivElement | undefined>;
   view: Accessor<HTMLDivElement | undefined>;
@@ -12,13 +15,12 @@ interface HookProps {
 }
 
 export const useCanvasMovement = (props: HookProps) => {
-  // --- Setup ---
   const config = createMovementConfig(props.options);
   const { physics } = config;
 
-  // --- Reactive State (Signals) ---
   const [isDragging, setIsDragging] = createSignal(false);
   const [isPinching, setIsPinching] = createSignal(false);
+  const [transformTick, setTransformTick] = createSignal(0);
 
   // --- Internal Physics State (Non-reactive for performance) ---
   let scale = 1,
@@ -30,20 +32,21 @@ export const useCanvasMovement = (props: HookProps) => {
     targetY = 0;
   let velocityX = 0,
     velocityY = 0;
-  let startX = 0,
-    startY = 0;
-  let lastTranslateX = 0,
-    lastTranslateY = 0;
-  let lastPinchDist: number | null = null;
+
   let lastZoomFocalPoint = { x: 0, y: 0 };
   let animationId: number | null = null;
+  let lastFrameTime = 0;
 
-  // --- Core Functions ---
+  // --- Pointer State ---
+  const pointers = new Map<number, { x: number; y: number }>();
+  let panStartPointers = new Map<number, { x: number; y: number }>();
+  let panStartTranslate = { x: 0, y: 0 };
+  let lastPinchDist = 0;
 
   const updateTransform = () => {
     const viewEl = props.view();
     if (viewEl) {
-      viewEl.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+      viewEl.style.transform = `translate3d(${translateX}px, ${translateY}px, 0) scale(${scale})`;
     }
     const backgroundEl = props.background?.();
     if (backgroundEl && props.options?.backgroundImage) {
@@ -80,7 +83,7 @@ export const useCanvasMovement = (props: HookProps) => {
     return { minX, maxX, minY, maxY };
   };
 
-  const updatePanPhysics = () => {
+  const updatePanPhysics = (dt: number) => {
     if (isDragging()) {
       const dx = (targetX - translateX) * physics.panLerpFactor;
       const dy = (targetY - translateY) * physics.panLerpFactor;
@@ -97,12 +100,16 @@ export const useCanvasMovement = (props: HookProps) => {
 
     const forceX = (clampedX - translateX) * physics.snapBackStiffness;
     const forceY = (clampedY - translateY) * physics.snapBackStiffness;
-    velocityX += forceX;
-    velocityY += forceY;
-    velocityX *= physics.panFriction;
-    velocityY *= physics.panFriction;
-    translateX += velocityX;
-    translateY += velocityY;
+
+    velocityX += forceX * dt;
+    velocityY += forceY * dt;
+
+    const frictionFactor = Math.pow(physics.panFriction, dt);
+    velocityX *= frictionFactor;
+    velocityY *= frictionFactor;
+
+    translateX += velocityX * dt;
+    translateY += velocityY * dt;
 
     const isSettled =
       Math.abs(velocityX) < 0.01 &&
@@ -117,9 +124,10 @@ export const useCanvasMovement = (props: HookProps) => {
     return isSettled;
   };
 
-  const updateZoomPhysics = () => {
+  const updateZoomPhysics = (dt: number) => {
     let currentTargetScale = targetScale;
     let isSettled = false;
+    const frictionFactor = Math.pow(physics.zoomFriction, dt);
 
     if (isPinching()) {
       if (targetScale < config.minScale) {
@@ -139,8 +147,8 @@ export const useCanvasMovement = (props: HookProps) => {
         Math.min(config.maxScale, scale)
       );
       const scaleForce = (clampedScale - scale) * physics.zoomSnapBackStiffness;
-      scaleVelocity += scaleForce;
-      scaleVelocity *= physics.zoomFriction;
+      scaleVelocity += scaleForce * dt;
+      scaleVelocity *= frictionFactor;
 
       isSettled =
         Math.abs(scaleVelocity) < 0.0001 &&
@@ -149,14 +157,14 @@ export const useCanvasMovement = (props: HookProps) => {
 
     if (Math.abs(scaleVelocity) > 0.00001 || isPinching()) {
       const oldScale = scale;
-      scale += scaleVelocity;
+      scale += scaleVelocity * dt;
       const scaleRatio = scale / oldScale;
 
       translateX =
         lastZoomFocalPoint.x - (lastZoomFocalPoint.x - translateX) * scaleRatio;
       translateY =
         lastZoomFocalPoint.y - (lastZoomFocalPoint.y - translateY) * scaleRatio;
-      targetX = translateX; // Prevent pan from fighting zoom
+      targetX = translateX;
       targetY = translateY;
     }
 
@@ -167,11 +175,15 @@ export const useCanvasMovement = (props: HookProps) => {
     return isSettled;
   };
 
-  const animate = () => {
-    const panSettled = updatePanPhysics();
-    const zoomSettled = updateZoomPhysics();
+  const animate = (time: number) => {
+    const dt = lastFrameTime > 0 ? (time - lastFrameTime) / 16.667 : 1;
+    lastFrameTime = time;
+
+    const panSettled = updatePanPhysics(dt);
+    const zoomSettled = updateZoomPhysics(dt);
 
     updateTransform();
+    setTransformTick((t) => t + 1);
 
     if (panSettled && zoomSettled) {
       animationId = null;
@@ -181,33 +193,34 @@ export const useCanvasMovement = (props: HookProps) => {
   };
 
   const startAnimation = () => {
-    if (!animationId) animationId = requestAnimationFrame(animate);
+    if (!animationId) {
+      lastFrameTime = 0;
+      animationId = requestAnimationFrame(animate);
+    }
   };
 
-  // --- Event Handlers ---
-
-  const onMouseDown = (e: MouseEvent) => {
-    if (e.button !== 0) return;
-    // Allow interactions with form elements, buttons, etc.
-    const target = e.target as HTMLElement;
-    if (target.closest("[data-interactive]")) return;
-
+  const panStart = () => {
     setIsDragging(true);
-    setIsPinching(false);
-    startX = e.clientX;
-    startY = e.clientY;
-    lastTranslateX = translateX;
-    lastTranslateY = translateY;
-    velocityX = velocityY = scaleVelocity = 0;
+    velocityX = velocityY = scaleVelocity = 0; // Stop all motion
+
+    // **THE FIX**: Synchronize the target with the current position to prevent jumps
+    targetX = translateX;
+    targetY = translateY;
+
+    panStartTranslate = { x: translateX, y: translateY };
+    panStartPointers = new Map(pointers);
     startAnimation();
   };
 
-  const onMouseMove = (e: MouseEvent) => {
-    if (!isDragging()) return;
-    const deltaX = e.clientX - startX;
-    const deltaY = e.clientY - startY;
-    const rawTargetX = lastTranslateX + deltaX;
-    const rawTargetY = lastTranslateY + deltaY;
+  const panMove = (
+    currentPointer: { x: number; y: number },
+    initialPointer: { x: number; y: number }
+  ) => {
+    const dx = currentPointer.x - initialPointer.x;
+    const dy = currentPointer.y - initialPointer.y;
+
+    const rawTargetX = panStartTranslate.x + dx;
+    const rawTargetY = panStartTranslate.y + dy;
 
     const bounds = getViewportBounds();
     const applyRubberBand = (raw: number, min: number, max: number) => {
@@ -222,7 +235,72 @@ export const useCanvasMovement = (props: HookProps) => {
     targetY = applyRubberBand(rawTargetY, bounds.minY, bounds.maxY);
   };
 
-  const onMouseUp = () => setIsDragging(false);
+  const pinchStart = (
+    p1: { x: number; y: number },
+    p2: { x: number; y: number }
+  ) => {
+    setIsDragging(false);
+    setIsPinching(true);
+    lastPinchDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    targetScale = scale;
+    startAnimation();
+  };
+
+  const pinchMove = (
+    p1: { x: number; y: number },
+    p2: { x: number; y: number }
+  ) => {
+    const newDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    if (lastPinchDist > 0) {
+      targetScale *= newDist / lastPinchDist;
+    }
+    lastPinchDist = newDist;
+    lastZoomFocalPoint = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+  };
+
+  const onPointerDown = (e: PointerEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest("[data-interactive]")) return;
+
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointers.size === 1) panStart();
+    if (pointers.size === 2) {
+      const [p1, p2] = Array.from(pointers.values());
+      pinchStart(p1, p2);
+    }
+  };
+
+  const onPointerMove = (e: PointerEvent) => {
+    if (!pointers.has(e.pointerId)) return;
+
+    const currentPointer = { x: e.clientX, y: e.clientY };
+    pointers.set(e.pointerId, currentPointer);
+
+    if (pointers.size === 1) {
+      const initialPointer = Array.from(panStartPointers.values())[0];
+      if (initialPointer) {
+        panMove(currentPointer, initialPointer);
+      }
+    }
+    if (pointers.size === 2) {
+      const [p1, p2] = Array.from(pointers.values());
+      pinchMove(p1, p2);
+    }
+  };
+
+  const onPointerUp = (e: PointerEvent) => {
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    pointers.delete(e.pointerId);
+
+    if (pointers.size < 2) setIsPinching(false);
+    if (pointers.size < 1) setIsDragging(false);
+
+    if (pointers.size === 1) {
+      panStart();
+    }
+  };
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
@@ -233,61 +311,6 @@ export const useCanvasMovement = (props: HookProps) => {
     lastZoomFocalPoint = { x: e.clientX, y: e.clientY };
     scaleVelocity += delta;
     startAnimation();
-  };
-
-  const onTouchStart = (e: TouchEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.closest("[data-interactive]")) return;
-
-    e.preventDefault();
-    const touches = e.touches;
-    if (touches.length === 1) {
-      setIsDragging(true);
-      setIsPinching(false);
-      startX = touches[0].clientX;
-      startY = touches[0].clientY;
-      lastTranslateX = translateX;
-      lastTranslateY = translateY;
-      velocityX = velocityY = scaleVelocity = 0;
-    } else if (touches.length === 2) {
-      setIsDragging(false);
-      setIsPinching(true);
-      const t1 = touches[0],
-        t2 = touches[1];
-      lastPinchDist = Math.hypot(
-        t1.clientX - t2.clientX,
-        t1.clientY - t2.clientY
-      );
-      targetScale = scale;
-    }
-    startAnimation();
-  };
-
-  const onTouchMove = (e: TouchEvent) => {
-    e.preventDefault();
-    const touches = e.touches;
-    if (touches.length === 1 && isDragging()) {
-      onMouseMove(touches[0] as unknown as MouseEvent);
-    } else if (touches.length === 2 && lastPinchDist !== null) {
-      const t1 = touches[0],
-        t2 = touches[1];
-      const newDist = Math.hypot(
-        t1.clientX - t2.clientX,
-        t1.clientY - t2.clientY
-      );
-      targetScale *= newDist / lastPinchDist;
-      lastPinchDist = newDist;
-      lastZoomFocalPoint = {
-        x: (t1.clientX + t2.clientX) / 2,
-        y: (t1.clientY + t2.clientY) / 2,
-      };
-    }
-  };
-
-  const onTouchEnd = (e: TouchEvent) => {
-    if (isDragging()) setIsDragging(false);
-    if (e.touches.length < 2) setIsPinching(false);
-    if (e.touches.length === 0) setIsDragging(false);
   };
 
   const setup = () => {
@@ -307,26 +330,13 @@ export const useCanvasMovement = (props: HookProps) => {
       backgroundEl.style.backgroundImage = `url(${props.options.backgroundImage.src})`;
     }
 
-    // Bind global listeners for dragging outside the container
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-
-    // Use passive: false to be able to call e.preventDefault()
-    containerEl.addEventListener("touchstart", onTouchStart, {
-      passive: false,
+    const observer = new ResizeObserver(() => {
+      startAnimation();
     });
-    containerEl.addEventListener("touchmove", onTouchMove, { passive: false });
-    containerEl.addEventListener("touchend", onTouchEnd);
-    containerEl.addEventListener("touchcancel", onTouchEnd);
-
-    const observer = new ResizeObserver(setup);
     observer.observe(containerEl);
     setup();
 
     onCleanup(() => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      // Container listeners are removed automatically by SolidJS
       observer.disconnect();
       if (animationId) cancelAnimationFrame(animationId);
     });
@@ -342,7 +352,7 @@ export const useCanvasMovement = (props: HookProps) => {
           x: containerEl.clientWidth / 2,
           y: containerEl.clientHeight / 2,
         };
-        scaleVelocity += 0.005;
+        scaleVelocity += 0.02;
         startAnimation();
       }
     },
@@ -353,12 +363,16 @@ export const useCanvasMovement = (props: HookProps) => {
           x: containerEl.clientWidth / 2,
           y: containerEl.clientHeight / 2,
         };
-        scaleVelocity -= 0.005;
+        scaleVelocity -= 0.02;
         startAnimation();
       }
     },
-    onMouseDown,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
     onWheel,
-    transform: () => ({ x: translateX, y: translateY, s: scale }),
+    transform: createMemo(
+      () => (transformTick(), { x: translateX, y: translateY, s: scale })
+    ),
   };
 };
