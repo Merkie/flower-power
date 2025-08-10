@@ -57,15 +57,14 @@ const useCanvasMovement = (props: {
 
   // --- Zoom Physics ---
   let scaleVelocity = 0;
-  const zoomFriction = 0.92;
-  const zoomSnapBackStiffness = 0.05;
+  const zoomFriction = 0.9; // Increased for less inertia
+  const zoomSnapBackStiffness = 0.05; // Added for rubber-band effect
   const minScale = 0.5;
   const maxScale = 2.0;
   let lastZoomFocalPoint = { x: 0, y: 0 };
 
   // --- State for pinch gesture ---
   let lastPinchDist: number | null = null;
-  const pinchRubberBandStiffness = 0.4; // Resistance for pinch rubber-banding
 
   // --- Bounding Box Definition ---
   const boundingBox = { width: 6000, height: 6000 };
@@ -153,6 +152,7 @@ const useCanvasMovement = (props: {
     const oldScale = scale;
     scale += scaleVelocity;
 
+    // Adjust translation based on the new scale to keep the focal point correct
     if (Math.abs(scaleVelocity) > 0.00001) {
       const scaleRatio = scale / oldScale;
       translateX =
@@ -186,7 +186,7 @@ const useCanvasMovement = (props: {
     if (!animationId) animationId = requestAnimationFrame(animate);
   };
 
-  // --- UPDATED: Non-animated zoom for pinch gestures with rubber-banding ---
+  // Non-animated zoom function for pinch gestures (remains unchanged)
   const pinchZoom = (factor: number, screenX: number, screenY: number) => {
     if (animationId) {
       cancelAnimationFrame(animationId);
@@ -198,15 +198,10 @@ const useCanvasMovement = (props: {
 
     const oldScale = scale;
     let newScale = oldScale * factor;
-
-    // Apply rubber banding instead of a hard clamp
-    if (newScale < minScale) {
-      newScale = minScale - (minScale - newScale) * pinchRubberBandStiffness;
-    } else if (newScale > maxScale) {
-      newScale = maxScale + (newScale - maxScale) * pinchRubberBandStiffness;
-    }
+    newScale = Math.max(minScale, Math.min(maxScale, newScale));
 
     const scaleRatio = newScale / oldScale;
+
     const newTranslateX = screenX - (screenX - translateX) * scaleRatio;
     const newTranslateY = screenY - (screenY - translateY) * scaleRatio;
 
@@ -220,6 +215,7 @@ const useCanvasMovement = (props: {
     setTransformVersion((v) => v + 1);
   };
 
+  // Function to apply zoom velocity
   const applyZoom = (delta: number, focalX: number, focalY: number) => {
     setIsDragging(false);
     velocityX = 0;
@@ -270,7 +266,7 @@ const useCanvasMovement = (props: {
     targetY = translateY;
     velocityX = 0;
     velocityY = 0;
-    scaleVelocity = 0;
+    scaleVelocity = 0; // Stop zoom inertia when panning starts
     startAnimation();
   };
 
@@ -335,7 +331,7 @@ const useCanvasMovement = (props: {
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY * -0.0001;
+    const delta = e.deltaY * -0.000045; // Slower scroll zoom
     applyZoom(delta, e.clientX, e.clientY);
   };
 
