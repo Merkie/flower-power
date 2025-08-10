@@ -65,7 +65,7 @@ const useCanvasMovement = (props: {
 
   // --- State for pinch gesture ---
   let lastPinchDist: number | null = null;
-  const pinchRubberBandStiffness = 0.4; // Resistance for pinch rubber-banding
+  const pinchRubberBandStiffness = 0.2; // Resistance for pinch rubber-banding
 
   // --- Bounding Box Definition ---
   const boundingBox = { width: 6000, height: 6000 };
